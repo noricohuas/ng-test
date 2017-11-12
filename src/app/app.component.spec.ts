@@ -30,7 +30,7 @@ describe('AppComponent', () => {
 
   it('should render title in a h1 tag', async(() => {
     element = fixture.debugElement.nativeElement;
-    expect(element.querySelector('h1').textContent).toContain('app');
+    expect(element.querySelector('h1').textContent).toContain('Tour of Heroes');
   }));
 
   it(`should have nav first element contain Dashboard`, async(() => {
