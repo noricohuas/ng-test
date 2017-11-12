@@ -3,12 +3,16 @@
   "version": "0.0.1",
   "license": "MIT",
   "scripts": {
+    "clean": "rm -rf dist coverage",
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
+    "build-prod": "ng build --prod",
     "test": "ng test",
     "lint": "ng lint",
-    "e2e": "ng e2e"
+    "test-coverage": "ng test --single-run --code-coverage",
+    "e2e": "ng e2e --webdriver-update false",
+    "webdriver-update": "webdriver-manager update --proxy http://127.0.0.1:1080"
   },
   "private": true,
   "dependencies": {
