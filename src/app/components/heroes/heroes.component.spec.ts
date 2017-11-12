@@ -1,6 +1,8 @@
 import { async, ComponentFixture, TestBed } from '@angular/core/testing';
-
 import { HeroesComponent } from './heroes.component';
+
+import { APP_BASE_HREF } from '@angular/common';
+import { AppModule } from '../../app.module';
 
 describe('HeroesComponent', () => {
   let component: HeroesComponent;
@@ -8,7 +10,9 @@ describe('HeroesComponent', () => {
 
   beforeEach(async(() => {
     TestBed.configureTestingModule({
-      declarations: [ HeroesComponent ]
+      declarations: [],
+      imports: [AppModule],
+      providers: [{provide: APP_BASE_HREF, useValue : '/' }]
     })
     .compileComponents();
   }));

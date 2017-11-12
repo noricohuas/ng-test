@@ -1,74 +1,51 @@
-import { TestBed, async } from '@angular/core/testing';
-import { BrowserModule } from '@angular/platform-browser';
-import { NgModule } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { HttpClientModule } from '@angular/common/http';
-
-import { HttpClientInMemoryWebApiModule } from 'angular-in-memory-web-api';
-import { InMemoryDataService } from './services/in-memory-data.service';
-
+import { async, ComponentFixture, TestBed } from '@angular/core/testing';
 import { AppComponent } from './app.component';
-import { AppRoutingModule } from './app-routing.module';
+import { APP_BASE_HREF } from '@angular/common';
+import { AppModule } from './app.module';
 
-import { DashboardComponent } from './components/dashboard/dashboard.component';
-import { HeroDetailComponent } from './components/hero-detail/hero-detail.component';
-import { HeroesComponent } from './components/heroes/heroes.component';
-import { HeroSearchComponent } from './components/hero-search/hero-search.component';
-import { MessagesComponent } from './components/messages/messages.component';
-import { HeroService } from './services/hero.service';
-import { MessageService } from './services/message.service';
 
 describe('AppComponent', () => {
+  let component: AppComponent;
+  let fixture: ComponentFixture<AppComponent>;
+  let element;
 
   beforeEach(async(() => {
     TestBed.configureTestingModule({
-      declarations: [
-        AppComponent,
-        DashboardComponent,
-        HeroesComponent,
-        HeroDetailComponent,
-        MessagesComponent,
-        HeroSearchComponent
-      ],
-      imports: [
-        BrowserModule,
-        FormsModule,
-        AppRoutingModule,
-        HttpClientModule,
-        // The HttpClientInMemoryWebApiModule module intercepts HTTP requests
-        // and returns simulated server responses.
-        // Remove it when a real server is ready to receive requests.
-        HttpClientInMemoryWebApiModule.forRoot(
-          InMemoryDataService, { dataEncapsulation: false }
-        )
-      ],
-      providers: [
-        HeroService,
-        MessageService
-      ],
+      declarations: [],
+      imports: [AppModule],
+      providers: [{provide: APP_BASE_HREF, useValue : '/' }]
     }).compileComponents();
   }));
 
+  beforeEach(() => {
+    fixture = TestBed.createComponent(AppComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+  });
+
 
   it('should create the app', async(() => {
-    const fixture = TestBed.createComponent(AppComponent);
-    const app = fixture.debugElement.componentInstance;
-    expect(app).toBeTruthy();
+    expect(component).toBeTruthy();
   }));
-
-
-  it(`should have as title 'app'`, async(() => {
-    const fixture = TestBed.createComponent(AppComponent);
-    const app = fixture.debugElement.componentInstance;
-    expect(app.title).toEqual('app');
-  }));
-
 
   it('should render title in a h1 tag', async(() => {
-    const fixture = TestBed.createComponent(AppComponent);
-    fixture.detectChanges();
-    const compiled = fixture.debugElement.nativeElement;
-    expect(compiled.querySelector('h1').textContent).toContain('Welcome to app!');
+    element = fixture.debugElement.nativeElement;
+    expect(element.querySelector('h1').textContent).toContain('app');
+  }));
+
+  it(`should have nav first element contain Dashboard`, async(() => {
+    element = fixture.debugElement.nativeElement;
+    expect(element.querySelector('nav').textContent).toContain('Dashboard');
+  }));
+
+  it(`should have nav first element equal Dashboard`, async(() => {
+    element = fixture.debugElement.nativeElement;
+    expect(element.querySelectorAll('nav')[0].textContent).toContain('Dashboard');
+  }));
+
+  it(`should have nav count`, async(() => {
+    element = fixture.debugElement.nativeElement;
+    expect(element.querySelectorAll('nav').length).toBeGreaterThan(0);
   }));
 
 

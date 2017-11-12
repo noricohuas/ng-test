@@ -1,11 +1,15 @@
 import { TestBed, inject } from '@angular/core/testing';
 
 import { MessageService } from './message.service';
+import { APP_BASE_HREF } from '@angular/common';
+import { AppModule } from '../app.module';
 
 describe('MessageService', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
-      providers: [MessageService]
+      declarations: [],
+      imports: [AppModule],
+      providers: [{provide: APP_BASE_HREF, useValue : '/' }]
     });
   });
 
