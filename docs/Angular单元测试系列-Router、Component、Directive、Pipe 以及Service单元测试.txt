@@ -1,0 +1,745 @@
+本节将涵盖Angular常用的组件单元测试方法，例如：Router、Component、Directive、Pipe 以及Service，原本是打算分成两节，但后来一想放在一起会更适合阅读，虽然看起来比较长。
+
+但，在此之前，我建议先阅读系列的前两节，可能先更系统性的了解Angular单元测试以及一些框架说明。
+
+注：本节略长，因此，我将遵循以下规则。
+
+每一小节为一个类型的起点，且互不冲突。
+每一小节前都会先待测试示例开始。
+所有容器测试组件都叫 TestComponent。
+[重要]beforeEach 由第一节统一讲解，后续将不再说明。
+一、beforeEach
+
+将 beforeEach 做为标题是因为在Angular单元测试里面，它的作用非常关键，因为所有的一切都需要它的引导。
+
+beforeEach 目的为了简化我们的测试代码，将一些重复的工作放在这。
+
+当我们需要写一段Angular单元测试时，是需要先提供一个测试模块，即：使用 TestBed.configureTestingModule 来构建，Angular工具集提供的用于快速创建一个测试 NgModule，并且他接受的参数，跟 NgModule 并无任何差异。
+
+beforeEach(() => {
+    TestBed.configureTestingModule({
+        imports: [HttpModule],
+        declarations: [TestComponent]
+    });
+});
+当你需要对任何东西进行测试时，如果有依赖，比如：Http，那么你需要 imports: [HttpModule]，这一切都跟 NgModule 写法完全一置。
+
+模块有了，还需要创建组件，这是因为当你需要测试某个组件时，组件本身带有一些HTML模板的渲染，例如：页面中显示用户信息，所以我们需要一个测试组件做为该待测试组件的容器，以便我们可以对渲染的结果进行测试。
+
+可是，等等，如果像 Pipe 本身无任何HTML模板而言也需要吗？所以，我们将这两种情况分开。
+
+1、无模板
+
+所谓无模板，指的是组件、指令、服务等等可能他们无须任何 HTML 模板的渲染，因此，也不必说非要构建一个测试组件容器出来，这种情况我们只需要利用强大的DI系统，将我们组件以注入的形式，或者说我们本意只需要测试组件（或Service）类而已。
+
+let directive: LogDirective;
+beforeEach(() => TestBed.configureTestingModule({
+    providers: [ LogDirective ]
+}));
+
+beforeEach(inject([ LogDirective ], c => {
+    directive = c;
+}));
+当然模块肯定是需要的，只不过我们采用 inject 将我们的 LogDirective 指令注入以后，我们就可以得到该指令的实例对象。
+
+2、有模板
+
+如同前面说，当我们需要一个组件容器来确保我们渲染的结果的时候，就需要构建一个容器测试组件。
+
+@Component({
+    template: `<trade-view [id]="id" (close)="_close()"></trade-view>`
+})
+class TestComponent {
+    id: number = 0;
+    _close() { }
+}
+
+beforeEach(() => {
+    TestBed.configureTestingModule({
+        imports: [HttpModule],
+        declarations: [TestComponent]
+    });
+    fixture = TestBed.createComponent(TestComponent);
+    context = fixture.componentInstance;
+    el = fixture.nativeElement;
+    dl = fixture.debugElement;
+});
+首先，TestComponent 为测试容器组件，注意：这里并没有 export，因为对于容器我们压根就没必要被其他测试使用。
+
+另，我们也不需要对 close 业务进行操作，因为对于测试而言我们只需要确保该事件被调用就行。
+
+其次，通过 TestBed.createComponent(TestComponent) 来创建组件，并且将返回值存储起来。
+
+fixture 包括组件实例、变更监测以及DOM相关的属性，它是我们后面用来写单元测试的核心，这里我将常用的几个属性存在外部，这样所有 it 都可以方便调用。
+
+nativeElement与debugElement的区别
+
+前者原生DOM元素，后者是由Angular进行包装并提供诸如：
+
+query 查询组件、指令等等。
+triggerEventHandler 触发DOM事件。
+以及一些便于我们写测试代码比较通用的操作，还有更多细节，会在每一小节遇到时再做解释。
+
+二、Component
+
+1、示例
+
+订单列表 ngOnInit 组件初始化时会远程请求交易订单数据。
+
+// trade-list.component.ts
+@Component({
+    selector: 'trade-list',
+    templateUrl: './trade-list.component.html',
+    styleUrls: [ './trade-list.component.scss' ]
+})
+export class TradeListComponent {
+
+    constructor(private srv: TradeService) {}
+
+    ngOnInit() {
+        this.query();
+    }
+
+    ls: any[] = [];
+    query() {
+        this.srv.query().subscribe(res => {
+            this.ls = res;
+        });
+    }
+}
+订单详情页指定个 id 交易编号，并根据该编号从远程获取数据并渲染。同时提供 close 用于关闭详情页时回调通知。
+
+// trade-view.component.ts
+@Component({
+    selector: 'trade-view',
+    template: `
+    <h1>trade {{id}}</h1>
+    <dl *ngIf="item">
+        <dt>sku_id</dt><dd>{{item.sku_id}}</dd>
+        <dt>title</dt><dd>{{item.title}}</dd>
+    </dl>
+    <button (click)="_close()">Close</button>
+    `,
+    host: {
+        '[class.trade-view]': 'true'
+    },
+    styles: [ `.trade-view { display: block; }` ],
+    encapsulation: ViewEncapsulation.None
+})
+export class TradeViewComponent {
+    @Input() id: number;
+
+    @Output() close = new EventEmitter();
+
+    constructor(private srv: TradeService) {}
+
+    ngOnInit() {
+        this.get();
+    }
+
+    item: any;
+    get() {
+        this.srv.get(this.id).then(res => {
+            this.item = res;
+        });
+    }
+
+    _close() {
+        this.close.emit();
+    }
+}
+以上两个待测试组件，我尽可能把我们日常可能遇到的（@Input、@Output、依赖、HTTP）情况考虑进来。
+
+下面的测试并非按示例的顺序来，而是根据单元测试步骤。
+
+2、测试模块 @NgModule
+
+如果根据 beforeEach 节我们采用有模板的来构建测试模块，大致应该是这样：
+
+@Component({
+    template: `<trade-view [id]="id" (close)="_close()"></trade-view>`
+})
+class TestComponent {
+    @ViewChild(TradeViewComponent) comp: TradeViewComponent;
+    id: number = 0;
+    _close() { }
+}
+
+beforeEach(() => {
+    TestBed.configureTestingModule({
+        imports: [HttpModule],
+        declarations: [TradeViewComponent, TestComponent],
+        providers: [TradeService, UserService]
+    });
+    fixture = TestBed.createComponent(TestComponent);
+    context = fixture.componentInstance;
+    el = fixture.nativeElement;
+    de = fixture.debugElement;
+});
+由于 TradeViewComponent 的构造函数依赖 TradeService（其又依赖 UserService），因此需要注入所有相关的服务，以及 HttpModule 模块。
+
+可是，我们的服务大都数是依赖于远程数据请求，而且我们不能因为远程数据的不小心变更倒置我们单元测试失败，这样的数据在单元测试里面压根就无法得到有效保证、并不靠谱。
+
+因此，我们需要使用 spyOn （jasmine）全局函数来监视，当 TradeService 的 get 被调用时返回一些我们模拟的数据。
+
+let spy: jasmine.Spy;
+const testTrade = { id: 10000 };
+beforeEach(() => {
+  // ...
+  spy = spyOn(tradeService, 'get').and.returnValue(Promise.resolve(testTrade));
+  // ...
+});
+非常简单，我们只不过在原有的基础上增加 spyOn 的处理而已。
+
+异步beforeEach
+
+trade-list 组件与 trade-view 有一个明显的区别，那便是HTML模板与样式文件是由引用外部URL地址的，而获取这些数据的这一过程是一个异步行为。因此，我们在构建 @NgModule 测试模块时，因此需要使用异步的方式构建 NgModule。
+
+beforeEach(async(() => {
+    TestBed.configureTestingModule({
+      // 同上
+    })
+    .compileComponents()
+    .then(() => { // 同上创建组件代码  });
+}));
+除了 async() 异步方法，以及 compileComponents() 两处以外，无任何其他差别。其实可以很容易理解这一点，当异步去请求数据时，总归需要等待它加载完的，才能有后面的行为吧。
+
+而这里 compileComponents() 就是如此，他会一直等待直接 templateUrl 及 styleUrls 都请求完成后才会继续。
+
+3、测试用例
+
+首先，从测试角度而言，我们第一个测试用例，应该要确保组件被初始化成功，那么我们如何去检验这一点呢？
+
+A、确保初始化
+
+对于 TradeViewComponent 而言 ngOnInit 生命周期触发时就执行获取数据运行，而后模板进行渲染。
+
+it('should be component initialized', () => {
+    context.id = 1;
+    fixture.detectChanges();
+    expect(el.querySelector('h1').innerText).toBe('trade 1');
+});
+context.id = 1; 中的 context 指的是测试容器组件实例，我们对其变量 id 赋值于 1，但对Angular而言并不知道数据的变化；所以需要手动的调用 fixture.detectChanges(); 来强制执行Angular变化检测，这样能确保数据绑定到DOM上。因此，我们才能断言 h1 DOM标签的内容是 trade 1字符串。
+
+自动变化检测
+
+除了手动，我们也可以引入 ComponentFixtureAutoDetect 让这种变化由 Angular 自动帮我们。
+
+TestBed.configureTestingModule({
+  { provide: ComponentFixtureAutoDetect, useValue: true }
+});
+但是也并非万能了，对于一些本身是由异步或计时器赋值的数据一样是无法被自动检测的。
+
+B、spy 监视
+
+当然这样远远不够，核心是数据请求然后再DOM渲染，之前已经利用 spyOn 监视服务方法的调用，所以我们只需要利用 spy 变量来检测是否被调用，以及DOM的渲染是不是跟数据一样，就行了。
+
+it('should be component initialized (done)', (done: DoneFn) => {
+    context.id = 1;
+    fixture.detectChanges();
+    expect(spy.calls.any()).toBe(true, 'get called');
+    spy.calls.mostRecent().returnValue.then(res => {
+        fixture.detectChanges();
+        expect(context.comp.item.id).toBe(testTrade.id);
+        expect(el.querySelector('dl')).not.toBeNull();
+        expect(el.querySelector('.sku-id').textContent).toBe('' + testTrade.sku_id);
+        expect(el.querySelector('.ware-title').textContent).toBe(testTrade.title);
+        done();
+    });
+});
+首先，spy.calls.any() 表示有当有任何监视函数被调用时视为 true，当然这是必然，因为组件 ngOnInit 的时候会调用一次。
+
+其次，spy.calls.mostRecent().returnValue 等同于 TradeServie 的 get() 方法的调用，只不过这里的返回的数据不再是调用远程，而是返回由我们模拟的数据而已。
+
+C、异步测试
+
+上面示例中，最后还使用了jasmine的异步方式，因为对于 get() 而言它本身是一个异步请求，我们只能够等待 then() 执行以后，才能标记这个测试已经完成。
+
+当然另外两种异步的写法：
+
+async
+
+it('should be component initialized (async)', async(() => {
+    fixture.detectChanges();
+    fixture.whenStable().then(() => {
+        fixture.detectChanges();
+        expect(context.comp.item.id).toBe(testTrade.id);
+        expect(el.querySelector('dl')).not.toBeNull();
+        expect(el.querySelector('.sku-id').textContent).toBe('' + testTrade.sku_id);
+        expect(el.querySelector('.ware-title').textContent).toBe(testTrade.title);
+    });
+}));
+将 spy.calls.mostRecent().returnValue 替换成 fixture.whenStable()，其返回一个Promise对象，Angular会在所有异步结束后触发Promise.resolve。
+
+fakeAsync
+
+it('should be component initialized (fakeAsync)', fakeAsync(() => {
+    fixture.detectChanges();
+    tick();
+    fixture.detectChanges();
+    expect(context.comp.item.id).toBe(testTrade.id);
+    expect(el.querySelector('dl')).not.toBeNull();
+    expect(el.querySelector('.sku-id').textContent).toBe('' + testTrade.sku_id);
+    expect(el.querySelector('.ware-title').textContent).toBe(testTrade.title);
+}));
+相比较 async 代码更加同步化，这样代码看起来也非常爽。
+
+fakeAsync与async区别
+
+二者本身并无区别，只不过是后者把前者的 fixture.whenStable() 换成 tick() 而已。
+
+D、@Input() 输入参数
+
+上面示例其实我们已经在做了 context.id = 1; 就是表示我们向 trade-view 组件传递一个交易编号为 1 值，并且也能从DOM找到 trade 1。
+
+E、@Output() 自定义事件
+
+trade-view 组件还有一个 (close) 事件，是如何确保它能被调用呢？因为当我们需要这个事件时，并无法通过一个类似订阅的方式知道说事件已经被调用了。那怎么办？
+
+依然还需要 spyOn，如前确认初始化测试用例中一样。
+
+首先，先监视容器组件的 _close()。
+
+beforeEach(() => {
+  // ...
+  spyOn(context, '_close');
+  // ...
+});
+最后。
+
+it('should be call `close`', () => {
+    el.querySelector('button').click();
+    fixture.detectChanges();
+    expect(context._close).toHaveBeenCalled();
+});
+因为 close 本身利用一个 Close 按钮来触发，因此，只需要查找到该按钮并触发其 click 事件；利用 toHaveBeenCalled 断言容器组件中的 _close() 事件是否被触发。我们无须关心 close 具体业务，因为这是另一个组件事情了。
+
+4、最佳实践
+
+至此，我总感觉有些不对。
+
+那便是 TradeService，我们太过于依赖它了。假如 TradeService 的依赖变动了，那是不是还得再修改测试组件依赖，而且 TradeService 可能会在很我多测试文件中出现，所以这样做很蛋疼。
+
+怎么办？
+
+回想，Angular最强大的功能DI，它解决了各种依赖关系的复杂问题。但是，从测试角度出发，如果说组件与组件之间的依赖关系也在单元测试中出现，这样的事情很让人受不了。
+
+正如 TradeService 内部还依赖 UserService，以至于，还需要注入 UserService，这都算什么事嘛。
+
+当然，最好的组件测试代码应该是纯洁的、干净的。
+
+Stub
+
+trade-list 组件依赖 TradeService，而 TradeService 又依赖 UserService，那么何不我们直接人为捏造一个 TradeService 呢？然后让这种依赖见鬼去。
+
+Angular最强大DI系统，可以简单帮助我们解决这个问题。以下使用 trade-list 组件为例：
+
+const tradeServiceStub = {
+    query(): Observable<any[]> {
+        return Observable.of(tradeData);
+    }
+};
+beforeEach(async(() => {
+    TestBed.configureTestingModule({
+        declarations: [TradeListComponent, TradePipe],
+        providers: [
+            { provide: TradeService, useValue: tradeServiceStub }
+        ]
+    }).compileComponents();
+    // 等同上面
+}));
+@NgModule 测试模块的写法和上面大概一样，只不过这里我们捏造了一个 tradeServiceStub，并且在注入 TradeService 时采用捏造的数据而已，就这么简单……
+
+因此，这里就看不到 HttpModule、UserService 了，干净了！
+
+5、小结
+
+如果按举一反三来讲的话，上面大概可以完成所有包括：Directive、Pipe、Service这些测试编码了。
+
+故，为了完整度，后续可能会出现一些和Component相同的内容。
+
+三、Directive
+
+1、示例
+
+一个点击次点指令。
+
+@Directive({ selector: '[log]' })
+export class LogDirective {
+    tick: number = 0;
+    
+    @Output() change = new EventEmitter();
+
+    @HostListener('click', [ '$event' ])
+    click(event: any) {
+        ++this.tick;
+        this.change.emit(this.tick);
+    }
+}
+2、测试模块 @NgModule
+
+// 测试容器组件
+@Component({
+    template: `<div log (change)="change($event)"></div>`
+})
+class TestComponent {
+    @Output() changeNotify = new EventEmitter();
+
+    change(value) {
+        this.changeNotify.emit(value);
+    }
+}
+
+beforeEach(() => {
+    TestBed.configureTestingModule({
+        declarations: [TestComponent, LogDirective]
+    });
+    fixture = TestBed.createComponent(TestComponent);
+    context = fixture.componentInstance;
+    el = fixture.nativeElement;
+
+    let directives = fixture.debugElement.queryAll(By.directive(LogDirective));
+    directive = directives.map((d: DebugElement) => d.injector.get(LogDirective) as LogDirective)[0];
+});
+这里没有涉及外部模板或样式，所以无须采用 beforeEach 异步。
+
+但和上面又略有不同的是，这里利用 By.directive 来查找测试容器组件的 LogDirective 指令。
+
+By
+
+By 是Angular提供的一个快速查找工具，允许传递一个 Type 类型的指令对象，这样给我们很多便利。它还包括：css、all。
+
+3、测试用例
+
+A、确保初始化
+
+只需要确保 beforeEach 获取的指令对象存在，都可以视为正确初始化，当然你也可以做更多。
+
+it('should be defined on the test component', () => {
+    expect(directive).not.toBeUndefined();
+});
+B、HostListener测试
+
+[log] 会监听父宿主元素的 click 事件，并且触发时会通知 change 自定义事件。因此，需要给测试容器组件添加一个 (change) 事件，而我们要测试的是，当我们触发测试容器组件中的按钮后，是否会触发该事件。
+
+it('should increment tick (fakeAsync)', fakeAsync(() => {
+    context.changeNotify.subscribe(val => {
+        expect(val).toBe(1);
+    });
+    el.click();
+    tick();
+}));
+这里采用 fakeAsync 异步测试方法，因为 changeNotify 的执行是需要事件触发以后才会接收到的。
+
+首先，订阅测试容器组件的 changeNotify，并以是否接收到数值 1 来表示结果（因为功能本身就是点击一个+1，开始默认为：0）。
+
+其次，触发DOM元素的 click() 事件。
+
+而 tick() 会中断执行，直到订阅结果返回。
+
+四、Pipe
+
+1、示例
+
+一个根据交易状态返回中文文本的Pipe。
+
+@Pipe({ name: 'trade' })
+export class TradePipe implements PipeTransform {
+    transform(value: any, ...args: any[]) {
+        switch (value) {
+            case 'new':
+                return '新订单';
+            case 'wait_pay':
+                return '待支付';
+            case 'cancel':
+                return `<a title="${args && args.length > 0 ? args[0] : ''}">已取消</a>`;
+            default:
+                throw new Error(`无效状态码${value}`);
+        }
+    }
+}
+2、测试用例
+
+A、确保初始化
+
+Pipe相当于一个类，而对类的测试最简单的，只需要主动创建一个实例就行了。
+
+当然，你也就无法使用 async、fakeAsync 之类的Angular工具集提供便利了。
+
+let pipe = new TradePipe();
+
+it('should be defined', () => {
+    expect(pipe).not.toBeUndefined();
+});
+B、new 状态码
+
+it(`should be return '新订单' with 'new' string`, () => {
+    expect(pipe.transform('new')).toEqual('新订单');
+});
+C、测试DOM渲染
+
+以上测试只能够测试Pipe是否能运行，而无法保证DOM渲染功能是否可用。因此，需要构建一个测试容器组件。
+
+@Component({ template: `<h1>{{ value | trade }}</h1>` })
+class TestComponent {
+    value: string = 'new';
+}
+
+let fixture: ComponentFixture<TestComponent>,
+    context: TestComponent,
+    el: HTMLElement,
+    de: DebugElement;
+beforeEach(() => {
+    TestBed.configureTestingModule({
+        declarations: [TestComponent, TradePipe]
+    });
+    fixture = TestBed.createComponent(TestComponent);
+    context = fixture.componentInstance;
+    el = fixture.nativeElement;
+    de = fixture.debugElement;
+});
+与之前看到的 NgModule 并无什么不一样。
+
+测试用例
+
+检验 h1 DOM标签的内容是不是如我们期望的即可。
+
+it('should display `待支付`', () => {
+    context.value = 'wait_pay';
+    fixture.detectChanges();
+    expect(el.querySelector('h1').textContent).toBe('待支付');
+});
+五、Service
+
+1、示例
+
+交易类：
+
+@Injectable()
+export class TradeService {
+    constructor(private http: Http, private userSrv: UserService) { }
+
+    query(): Observable<any[]> {
+        return this.http
+            .get('./assets/trade-list.json?token' + this.userSrv.token)
+            .map(response => response.json());
+    }
+
+    private getTrade() {
+        return {
+            "id": 10000,
+            "user_id": 1,
+            "user_name": "asdf",
+            "sku_id": 10000,
+            "title": "商品名称"
+        }
+    }
+
+    get(tid: number): Promise<any> {
+        return new Promise(resolve => {
+            setTimeout(() => {
+                resolve(this.getTrade());
+            }, 500);
+        })
+    }
+}
+用户类：
+
+@Injectable()
+export class UserService {
+
+    token: string = 'wx';
+
+    get() {
+        return {
+            "id": 1,
+            "name": "asdf"
+        };
+    }
+
+    type() {
+        return ['普通会员', 'VIP会员'];
+    }
+}
+2、测试用例
+
+A、确保初始化
+
+当Service无任何依赖时，我们可以像 Pipe 一样，直接构建一个实例对象即可。
+
+当然，你也就无法使用 async、fakeAsync 之类的Angular工具集提供便利了。
+
+let srv: UserService = new UserService();
+
+it(`#token should return 'wx'`, () => {
+    expect(srv.token).toBe('wx');
+});
+当然，绝大部分情况下不如所愿，因为真实的业务总是依赖于 Http 模块，因此，我们还需要 Angular工具集的支持，先构建一个 NgModule。
+
+let srv: TradeService;
+beforeEach(() => TestBed.configureTestingModule({
+    imports: [HttpModule],
+    providers: [TradeService, UserService]
+}));
+beforeEach(inject([TradeService], s => { srv = s; }));
+当然，它比我们上面任何一个示例简单得多了。
+
+it('#query should return trade array', (done: DoneFn) => {
+    srv.query().subscribe(res => {
+        expect(Array.isArray(res)).toBe(true);
+        expect(res.length).toBe(2);
+        done();
+    });
+});
+B、为什么无法使用 async、fakeAsync
+
+虽然Service基本上都是异步方法，但是这里并没有使用任何 async、fakeAsync，哪怕我们的异步方法是 Observable 或 Promise。
+
+细心的话，前面我提到两次。
+
+当然，你也就无法使用 async、fakeAsync 之类的Angular工具集提供便利了。
+这是其中一方面。
+
+而另一方面本示例也采用 Angular 工具集创建了 NgModule，可为什么以下测试无法通过呢？
+
+it('#get should return trade (fakeAsync)', fakeAsync((done: DoneFn) => {
+    srv.get(1).then(res => {
+        expect(res).not.toBeNull();
+        expect(res.id).toBe(10000);
+    });
+    tick();
+}));
+这是因为 tick() 本身只能等待诸如DOM事件、定时器、Observable以及Promise之类的，但是对于我们示例中 get() 是使用 setTimeout 来模拟一次请求要 500ms 呀，这对于 tick() 而言并不知道需要等待多长时间的呀。
+
+所以，这里需要改成：
+
+tick(600);
+让等待的时长比我们 seTimeout 略长一点就行啦。
+
+六、Router
+
+当前以上看似我们已经懂得如何去测试各种组件及服务，但……有一项很重要的事实，那就是真正的项目总是冲刺着各种 Router 路由。
+
+原本我打算独立另一篇解释，但是一想，倘若分开，会让人更加糊涂。
+
+那么，如果我们在上面的交易列表HTML模板增加路由跳转代码，例如点击交易编码跳转到交易详情页中。
+
+<p><a [routerLink]="[ i.id ]">{{i.id}}</a></p>
+那么，应该如何去检验这一过程呢？我认为应该从两种情况出发：
+
+一是：是否有必要检验导航过程，如果说当前测试的组件导航至目前组件，而目前组件可能包含一些更为复杂的依赖，比如：权限。
+
+二是：反之。
+
+那么根据以上两种情况，我拆分成两种，一是Stubs，二是 RouterTestingModule
+路由测试模块。
+
+1、Stubs
+
+根据上面分类，只需要测试当前组件 routerLink 的正确性，而不对路由导航进行验证。
+
+可能这个会更简单一点，因为只需要 Spy 监视Angular 的 routerLink 的调用不就可以了吗？
+
+可怎么做？
+
+再回过头说Angular最强大的DI系统，利用它，自己 Stub 一个 RouterLinkStubDirective，然后利用DI替换 Angular 的 routerLink 不就可以了吗？
+
+@Directive({
+  selector: '[routerLink]',
+  host: {
+    '(click)': 'onClick()'
+  }
+})
+export class RouterLinkStubDirective {
+  @Input('routerLink') linkParams: any;
+  navigatedTo: any = null;
+
+  onClick() {
+    this.navigatedTo = this.linkParams;
+  }
+}
+替换 routerLink。
+
+beforeEach(async(() => {
+    TestBed.configureTestingModule({
+        declarations: [TradeListComponent, RouterLinkStubDirective]
+    })
+}));
+最后，可以写一个测试用例，来验证生成情况。
+
+it('can get RouterLinks from template', () => {
+    let allLinks = fixture.debugElement.queryAll(By.directive(RouterLinkStubDirective));
+    let links = allLinks.map(linkDe => linkDe.injector.get(RouterLinkStubDirective) as RouterLinkStubDirective);
+    expect(links.length).toBe(tradeData.length);
+    expect(links[0].linkParams.toString()).toBe('/' + tradeData[0].id);
+});
+这类代码上面也有写过，这里使用 By.directive 查找页面所有 RouterLinkStubDirective，最后只是根据值进行断言。
+
+2、RouterTestingModule
+
+当需要进行路由导航势必需要与 location 打交道，得需要获取 URL 信息来验证导航的结果，是吧！
+
+当然，不必想太多，因为Angular工具集帮我们做了一个很常用的 Spy Module，以便写测试代码，名也：RouterTestingModule。
+
+beforeEach(async(() => {
+    TestBed.configureTestingModule({
+        imports: [AppModule, RouterTestingModule],
+        schemas: [NO_ERRORS_SCHEMA]
+    })
+    .compileComponents()
+}));
+这是Angular工具集提供的一个很重要路由测试模块，它帮助我们 Spy 几个日常模块：
+
+Location 类似于 Javascript 的 location，我们可以利用它来验证URL。
+LocationStrategy 方便操作路由策略，不管 Hash还是Path。
+NgModuleFactoryLoader 延迟模块加载。
+location
+
+导航验证最核心是URL的变化，那么可以获取已经注入的 Location。
+
+const injector = fixture.debugElement.injector;
+location = injector.get(Location) as SpyLocation;
+NO_ERRORS_SCHEMA
+
+如果说路由至某个页面时，而该页面可能会有其它组件 app-header 等之类的时候，而测试模块又没有导入这些组件时，可又会找不到，利用 NO_ERRORS_SCHEMA 可以忽略这部分组件错误。
+
+1）、测试用例
+
+导航路径本身还需要手动初始化。
+
+router = injector.get(Router);
+router.initialNavigation();
+URL导航测试
+
+it('should navigate to "home" immediately', fakeAsync(() => {
+  expect(location.path()).toEqual('/home');
+}));
+点击导航测试
+
+it('should navigate to "home" immediately', fakeAsync(() => {
+    // 获取页面所有链接
+    let allLinks = fixture.debugElement.queryAll(By.directive(RouterLinkWithHref));
+    // 点击第一个链接
+    allLinks[0].nativeElement.click();
+
+    tick();
+    fixture.detectChanges();
+
+    expect(location.path()).toEqual('/10001');
+}));
+七、结论
+
+Angular单元测试其实非常简单，很多代码都是重复的。当然了，这里头的概念也没有很多，总归只是以 TestBed 为入口、以DI系统为简化依赖、以 spy 监听事件，仅此而已。
+
+当然，这里是有一些技巧，请见下一篇。
+
+本节一共有27个用例，所有的你都可以在plnkr中找得到。
+
+下一节，解释一些单元测试技巧。
+
+happy coding!
+
+作者：cipchk
+链接：https://www.jianshu.com/p/de8141988c03
+來源：简书
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。

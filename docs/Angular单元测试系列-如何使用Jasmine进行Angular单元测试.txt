@@ -1,0 +1,199 @@
+以下是我假定那些极少或压根没写单元测试的人准备的，因此，会白话解释诸多概念性问题，同时会结合 Jasmine 与之对应的方法进行讲解。
+
+一、概念
+
+Test Suite
+
+测试套件，哪怕一个简单的类，也会有若干的测试用例，因此将这些测试用例集合在一个分类下就叫Test Suite。
+
+而在 Jasmine 就是使用 describe 全局函数来表示，它的第一个字符串参数用来表示Suite的名称或标题，第二个方法参数就是实现Suite代码了。
+
+describe('test suite name', () => {
+});
+Specs
+
+一个Specs相当于一个测试用例，也就是我们实现测试具体代码体。
+
+Jasmine 就是使用 it 全局函数来表示，和 describe 类似，字符串和方法两个参数。
+
+而每个 Spec 内包括多个 expectation 来测试需要测试的代码，只要任何一个 expectation 结果为 false 就表示该测试用例为失败状态。
+
+describe('demo test', () => {
+    const VALUE = true;
+    it('should be true', () => {
+        expect(VALUE).toBe(VALUE);
+    })
+});
+Expectations
+
+断言，使用 expect 全局函数来表示，只接收一个代表要测试的实际值，并且需要与 Matcher 代表期望值。
+
+二、常用方法
+
+Matchers
+
+断言匹配操作，在实际值与期望值之间进行比较，并将结果通知Jasmine，最终Jasmine会判断此 Spec 成功还是失败。
+
+Jasmine 提供非常丰富的API，一些常用的Matchers：
+
+toBe() 等同 ===
+toNotBe() 等同 !==
+toBeDefined() 等同 !== undefined
+toBeUndefined() 等同 === undefined
+toBeNull() 等同 === null
+toBeTruthy() 等同 !!obj
+toBeFalsy() 等同 !obj
+toBeLessThan() 等同 <
+toBeGreaterThan() 等同 >
+toEqual() 相当于 ==
+toNotEqual() 相当于 !=
+toContain() 相当于 indexOf
+toBeCloseTo() 数值比较时定义精度，先四舍五入后再比较。
+toHaveBeenCalled() 检查function是否被调用过
+toHaveBeenCalledWith() 检查传入参数是否被作为参数调用过
+toMatch() 等同 new RegExp().test()
+toNotMatch() 等同 !new RegExp().test()
+toThrow() 检查function是否会抛出一个错误
+而这些API之前用 not 来表示负值的判断。
+
+expect(true).not.toBe(false);
+这些Matchers几乎可以满足我们日常需求，当然你也可以定制自己的Matcher来实现特殊需求。
+
+Setup 与 Teardown
+
+一份干将的测试代码很重要，因此我们可以将这些重复的 setup 与 teardown 代码，放在与之相对应的 beforeEach 与 afterEach 全局函数里面。
+
+beforeEach 表示每个 Spec 执行之前，反之。
+
+describe('demo test', () => {
+    let val: number = 0;
+    beforeEach(() => {
+        val = 1;
+    });
+    it('should be true', () => {
+        expect(val).toBe(1);
+    });
+    it('should be false', () => {
+        expect(val).not.toBe(0);
+    });
+});
+数据共享
+
+如同上面示例中，我们可以在每个测试文件开头、describe 来定义相应的变量，这样每个 it 内部可以共享它们。
+
+当然，每个 Spec 的执行周期间也会伴随着一个空的 this 对象，直至 Spec 执行结束后被清空，利用 this 也可以做数据共享。
+
+嵌套代码
+
+有时候当我们对某个组件进行测试时，而这个组件会有不同状态来展示不同的结果，这个时候如果只用一个 describe 会显得不过优雅。
+
+因此，嵌套 describe，会让测试代码、测试报告看起来更漂亮。
+
+describe('AppComponent', () => {
+    describe('Show User', () => {
+        it('should be show panel.', () => {});
+        it('should be show avatar.', () => {});
+    });
+    describe('Hidden User', () => { 
+        it('should be hidden panel.', () => {});
+    });
+});
+跳过测试代码块
+
+需求总是三心二意的，但好不容易写好的测试代码，难道要删除吗？非也……
+
+Suites 和 Specs 分别可以用 xdescribe 和 xit 全局函数来跳过这些测试代码块。
+
+三、配合Angular工具集
+
+Spy
+
+Angular的自定义事件实在太普遍了，但为了测试这些自定义事件，因此监控事件是否正常被调用是非常重要。好在，Spy 可以用于监测函数是否被调用，这简直就是我们的好伙伴。
+
+以下示例暂时无须理会，暂且体验一下：
+
+describe('AppComponent', () => {
+    let fixture: ComponentFixture<TestComponent>;
+    let context: TestComponent;
+
+    beforeEach(() => {
+        TestBed.configureTestingModule({
+            declarations: [TestComponent]
+        });
+        fixture = TestBed.createComponent(TestComponent);
+        context = fixture.componentInstance;
+        // 监听onSelected方法
+        spyOn(context, 'onSelected');
+        fixture.detectChanges();
+    });
+
+    it('should be called [selected] event.', () => {
+        // 触发selected操作
+
+        // 断言是否被调用过
+        expect(context.onSelected).toHaveBeenCalled();
+    });
+});
+异步支持
+
+首先，这里的异步是指带有 Observable 或 Promise 的异步行为，因此对于组件在调用某个 Service 来异步获取数据时的测试状态。
+
+假设我们的待测试组件代码：
+
+export class AppComponent {
+  constructor(private _user: UserService) {}
+
+  query() {
+    this._user.quer().subscribe(() => {});
+  }
+}
+async
+
+async 无任何参数与返回值，所有包裹代码块里的测试代码，可以通过调用 whenStable() 让所有待处理异步行为都完成后再进行回调；最后，再进行断言操作。
+
+it('should be get user list (async)', async(() => {
+    // call component.query();
+    fixture.whenStable().then(() => {
+        fixture.detectChanges();
+        expect(true).toBe(true);
+    });
+}));
+fakeAsync
+
+如果说 async 还需要回调才能进行断点让你受不了的话，那么 fakeAsync 可以解决这一点。
+
+it('should be get user list (async)', fakeAsync(() => {
+    // call component.query();
+    tick();
+    fixture.detectChanges();
+    expect(true).toBe(true);
+}));
+这里只是将回调换成 tick()，怎么样，是不是很酷。
+
+Jasmine自带异步
+
+如前面所说的异步是指带有 Observable 或 Promise 的异步行为，而有时候我们有些东西是依赖 setTimeout 或者可能是需要外部订阅结果以后才能触发时怎么办呢？
+
+可以使用 done() 方法。
+
+it('async demo', (done: () => void) => {
+    context.show().subscribe(res => {
+        expect(true).toBe(true);
+        done();
+    });
+    el.querySelected('xxx').click();
+});
+四、结论
+
+本章几乎所有的内容在Angular单元测试经常使用到的东西；特别是异步部分，三种不同异步方式并非共存的，而是需要根据具体业务而采用。否则，你会发现真TM难写单元测试。毕竟这是一个异步的世界。
+
+自此，我们算是为Angular写单元测试打下了基础。后续，将不会再对这类基础进行解释。
+
+那么下一篇，我们将介绍Component、Directive、Pipe 以及Service单元测试。
+
+happy coding!
+
+作者：cipchk
+链接：http://www.jianshu.com/p/2cb0b222d93f
+來源：简书
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
